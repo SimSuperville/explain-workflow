@@ -198,8 +198,10 @@
     <div class="panel-body" id="panelBody"></div>
   </div>
 
+<script type="application/json" id="wf-data">__WORKFLOW_DATA__</script>
+<script type="application/json" id="wf-icons">__NODE_ICONS__</script>
 <script>
-/* ============ Real n8n node icons (verbatim from the n8n repo) ============ */
+/* ============ Built-in fallback icons (the bundled #wf-icons library takes priority) ============ */
 const NODE_ICONS = {
   "n8n-nodes-base.scheduleTrigger":{color:"#424242",svg:`<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.75" stroke="currentColor" stroke-width="1.5"/><path d="M12 6V12L8.5 14" stroke="currentColor" stroke-width="1.5"/></svg>`},
   "n8n-nodes-base.set":{color:"#3a42e9",svg:`<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.2676 4.34277L11.1113 5.5H5.75C5.33579 5.5 5 5.83579 5 6.25V18.25C5 18.6642 5.33579 19 5.75 19H17.75C18.1642 19 18.5 18.6642 18.5 18.25V12.8887L19.6562 11.7324H20V18.25C20 19.4926 18.9926 20.5 17.75 20.5H5.75C4.50736 20.5 3.5 19.4926 3.5 18.25V6.25C3.5 5.00736 4.50736 4 5.75 4H12.2676V4.34277Z" fill="currentColor"/><path d="M17.1893 3.31066C17.7751 2.72487 18.7249 2.72487 19.3107 3.31066L20.6893 4.68934C21.2751 5.27513 21.2751 6.22487 20.6893 6.81066L12.6893 14.8107C12.408 15.092 12.0265 15.25 11.6287 15.25H8.75V12.3713C8.75 11.9735 8.90804 11.592 9.18934 11.3107L17.1893 3.31066Z" stroke="currentColor" stroke-width="1.5"/><path d="M15.75 4.75L19.25 8.25" stroke="currentColor" stroke-width="1.5"/></svg>`},
@@ -214,10 +216,14 @@ const NODE_ICONS = {
   "@n8n/n8n-nodes-langchain.lmChatAnthropic":{color:"#D97757",svg:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 46 32"><path fill="#D97757" d="M32.73 0h-6.945L38.45 32h6.945zM12.665 0 0 32h7.082l2.59-6.72h13.25l2.59 6.72h7.082L19.929 0zm-.702 19.337 4.334-11.246 4.334 11.246z"/></svg>`}
 };
 const GENERIC_ICON = {color:"#80808a", svg:`<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/></svg>`};
-const iconFor = n => (n.iconSvg ? {svg:n.iconSvg, color:(n.iconColor||"#80808a")} : (NODE_ICONS[n.type] || GENERIC_ICON));
+let BUNDLED_ICONS = {};
+const iconFor = n => (n.iconSvg ? {svg:n.iconSvg, color:(n.iconColor||"#80808a")}
+  : (BUNDLED_ICONS[n.type] || NODE_ICONS[n.type] || GENERIC_ICON));
 
-/* ============ Workflow data (the real command injects this as __WORKFLOW_DATA__) ============ */
-const WF = __WORKFLOW_DATA__;
+/* ============ Workflow data — injected as JSON in #wf-data, parsed at boot ============ */
+let WF;
+function readJSON(id){ const el=document.getElementById(id); if(!el) return null;
+  const txt=(el.textContent||"").trim(); return txt ? JSON.parse(txt) : null; }
 
   /* ============ State ============ */
 const NODE_W=84, NODE_H=84, CFG=64;
@@ -233,6 +239,7 @@ const botA = n => { const s=sizeOf(n); return [n.x+s.w/2, n.y+s.h]; };
 /* ============ Canvas render ============ */
 function edgePath(e){
   const a=byId(e.from), b=byId(e.to);
+  if(!a||!b) return null;
   if(e.ai){ const [sx,sy]=topA(a), [tx,ty]=botA(b);
     return {d:`M${sx},${sy} C${sx},${sy-44} ${tx},${ty+44} ${tx},${ty}`, end:[tx,ty]}; }
   const [sx,sy]=outA(a), [tx,ty]=inA(b);
@@ -240,8 +247,9 @@ function edgePath(e){
   return {d:`M${sx},${sy} C${sx+dx},${sy} ${tx-dx},${ty} ${tx},${ty}`, end:[tx,ty]};
 }
 function renderEdges(){
-  document.getElementById("edges").innerHTML = WF.edges.map(e=>{
+  document.getElementById("edges").innerHTML = (WF.edges||[]).map(e=>{
     const p=edgePath(e);
+    if(!p){ console.warn("explain-workflow: skipping edge with unknown endpoint", e); return ""; }
     return `<path class="edge-path ${e.ai?'ai':''}" data-from="${e.from}" data-to="${e.to}" d="${p.d}"/>`+
            `<circle class="edge-dot" data-from="${e.from}" data-to="${e.to}" cx="${p.end[0]}" cy="${p.end[1]}" r="2.6"/>`;
   }).join("");
@@ -283,10 +291,11 @@ function zoomAt(cx, cy, factor){
   zoom = nz; applyTransform(true);
 }
 function nodesBounds(ids){
-  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
-  ids.forEach(id=>{const n=byId(id),s=sizeOf(n);
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,seen=0;
+  ids.forEach(id=>{const n=byId(id); if(!n) return; const s=sizeOf(n); seen++;
     x0=Math.min(x0,n.x); y0=Math.min(y0,n.y); x1=Math.max(x1,n.x+s.w); y1=Math.max(y1,n.y+s.h+24);});
-  return {x0,y0,x1,y1,w:x1-x0,h:y1-y0,cx:(x0+x1)/2,cy:(y0+y1)/2};
+  if(!seen) return {x0:0,y0:0,x1:200,y1:200,w:200,h:200,cx:100,cy:100};
+  return {x0,y0,x1,y1,w:Math.max(1,x1-x0),h:Math.max(1,y1-y0),cx:(x0+x1)/2,cy:(y0+y1)/2};
 }
 function focus(ids, {fit=false, minZoom=0}={}){
   const b=nodesBounds(ids), pad=90;
@@ -294,8 +303,11 @@ function focus(ids, {fit=false, minZoom=0}={}){
     const zx=(vp.clientWidth-pad*2)/b.w, zy=(vp.clientHeight-pad*2)/b.h;
     zoom=clampZoom(Math.min(zx,zy,1.15));
   } else if(minZoom){ zoom=Math.max(zoom,minZoom); }
+  if(!isFinite(zoom)||zoom<=0) zoom=1;
   panX=vp.clientWidth/2 - b.cx*zoom;
   panY=vp.clientHeight/2 - b.cy*zoom;
+  if(!isFinite(panX)) panX=0;
+  if(!isFinite(panY)) panY=0;
   applyTransform(true);
 }
 function fitAll(){ focus(WF.nodes.map(n=>n.id), {fit:true}); }
@@ -457,7 +469,6 @@ window.addEventListener("mousemove",e=>{
 window.addEventListener("mouseup",()=>{ resizing=false; document.body.style.userSelect=""; });
 
 /* ============ Wire up ============ */
-document.getElementById("wfTitle").textContent="· "+WF.title;
 document.getElementById("prevBtn").addEventListener("click",()=>nav(-1));
 document.getElementById("nextBtn").addEventListener("click",()=>nav(1));
 document.getElementById("levelToggle").addEventListener("click",e=>{
@@ -476,10 +487,45 @@ window.addEventListener("keydown",e=>{
   if(e.key==="ArrowLeft"){ e.preventDefault(); nav(-1); }
 });
 
-renderEdges();
-renderNodes();
-applyTransform(false);
-renderAll();
+/* ============ Boot: parse data, validate, render — visible error instead of a blank page ============ */
+function showError(msg){
+  const d=document.createElement("div");
+  d.style.cssText="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--c-canvas);padding:32px;";
+  d.innerHTML=`<div style="max-width:660px;font-family:var(--font);color:var(--c-text-dark);background:var(--c-panel);border:1px solid var(--c-border);border-radius:12px;padding:24px 28px;box-shadow:0 10px 30px rgba(0,0,0,.12)">`+
+    `<div style="font-size:16px;font-weight:600;margin-bottom:8px">Couldn't render this workflow explainer</div>`+
+    `<div style="font-size:13px;color:var(--c-muted);line-height:1.55;margin-bottom:12px">The page loaded but the workflow data didn't. The details below say exactly what went wrong (usually malformed injected data).</div>`+
+    `<pre style="font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--c-chip);border:1px solid var(--c-border);border-radius:8px;padding:12px;color:var(--c-text);overflow:auto;max-height:46vh">${String(msg).replace(/&/g,"&amp;").replace(/</g,"&lt;")}</pre></div>`;
+  document.body.appendChild(d);
+}
+function validateAndRepair(){
+  if(!WF || !Array.isArray(WF.nodes)) throw new Error("Workflow data is missing a 'nodes' array.");
+  const ids=new Set(WF.nodes.map(n=>n.id));
+  WF.stages=(WF.stages||[]).map(s=>({...s, nodeIds:(s.nodeIds||[]).filter(id=>{
+    if(ids.has(id)) return true;
+    console.warn("explain-workflow: stage '"+s.id+"' references unknown node id, dropping:", id); return false;
+  })}));
+  WF.edges=(WF.edges||[]).filter(e=>{
+    const ok=ids.has(e.from)&&ids.has(e.to);
+    if(!ok) console.warn("explain-workflow: dropping edge with unknown endpoint:", e);
+    return ok;
+  });
+}
+function boot(){
+  try{
+    WF = readJSON("wf-data");
+    BUNDLED_ICONS = readJSON("wf-icons") || {};
+  }catch(e){ showError("The injected workflow data is not valid JSON.\n\n"+((e&&e.stack)||e)); return; }
+  try{
+    validateAndRepair();
+    document.getElementById("wfTitle").textContent="· "+(WF.title||"");
+    if(!WF.nodes.length){ showError("This workflow has no nodes to display."); return; }
+    renderNodes();
+    renderEdges();
+    applyTransform(false);
+    renderAll();
+  }catch(e){ showError((e&&e.stack)||String(e)); }
+}
+boot();
 </script>
 </body>
 </html>

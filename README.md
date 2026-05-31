@@ -12,20 +12,21 @@ parameters worth changing, with this workflow's real values and a plain note on 
 
 The output is a single `.html` file with no dependencies — open it in any browser, or share it.
 
-> See a live example: `plugins/explain-workflow/examples/daily-ai-brief.explain.html` (open it in a browser).
+> See a live example: `plugins/explain-workflow/examples/what-shipped-yesterday.explain.html` (open it in a browser).
 
 ---
 
 ## Requirements
 
 1. **Claude Code** with plugin support.
-2. The **n8n MCP server** connected in Claude Code. This plugin *uses* that server (to read your
+2. **Node.js ≥ 18** on your PATH — runs the bundled builder. (Every n8n user already has it.)
+3. The **n8n MCP server** connected in Claude Code. This plugin *uses* that server (to read your
    workflow and its node definitions) but cannot provide it — you configure it yourself. See the
    [n8n MCP docs](https://docs.n8n.io/). You'll also need the target workflow to have **MCP access
    enabled** (workflow card ⋯ menu, or workflow Settings).
-3. *(Optional, for the richest icons)* a local clone of the [n8n repo](https://github.com/n8n-io/n8n),
-   commonly at `~/Documents/n8n`. The command reads genuine node-icon SVGs from it. Without it, common
-   nodes still render with a built-in icon set and anything else gets a clean generic glyph.
+
+**No n8n repo checkout needed** — ~100 real node icons ship inside the plugin, and everything dynamic
+comes from the MCP. Uncommon node types get a clean generic glyph.
 
 ## Install
 
@@ -73,8 +74,12 @@ toggle **Simple / Technical** in the panel; drag the canvas to pan and ⌘/Ctrl-
 The plugin is intentionally split into a fixed UI shell plus generated data:
 
 - `plugins/explain-workflow/template.html` — the workflow-agnostic UI (canvas, stepper, panel,
-  pan/zoom, embedded fonts). Two placeholders, `__WORKFLOW_DATA__` and `__WORKFLOW_TITLE__`, are
-  filled at generation time.
+  pan/zoom, embedded fonts). The workflow data and the icon library are injected into
+  `<script type="application/json">` blocks and parsed at runtime (robust against any node text), and
+  rendering is wrapped so a malformed input shows a clear error rather than a blank page.
+- `plugins/explain-workflow/node-icons.json` — ~100 real n8n node icons, bundled (no repo needed).
+- `plugins/explain-workflow/build.mjs` — the Node builder: injects data + icons into the template,
+  writes the HTML, and opens it.
 - `plugins/explain-workflow/commands/explain-workflow.md` — the slash command: how the workflow is
   resolved, understood via the n8n MCP, grouped into stages, and turned into the data object.
 - **`plugins/explain-workflow/DESIGN.md`** — the full design spec: every product decision, the data

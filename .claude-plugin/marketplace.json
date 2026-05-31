@@ -4,13 +4,13 @@
     "name": "Simeon Superville"
   },
   "description": "Tools for working with n8n in Claude Code.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "plugins": [
     {
       "name": "explain-workflow",
       "source": "./plugins/explain-workflow",
       "description": "Generate an interactive HTML explainer for any n8n workflow.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": { "name": "Simeon Superville" },
       "license": "MIT",
       "keywords": ["n8n", "workflow", "documentation", "visualization"]

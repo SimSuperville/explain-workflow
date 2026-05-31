@@ -10,27 +10,28 @@ The output recreates the n8n canvas (real node icons, real fonts, trigger pill s
 sub-node edges, dot-grid canvas, pan/zoom, resizable panel) and lets the reader click through the
 workflow at two difficulty levels.
 
-## Bundled files (resolve the plugin root first)
+## Bundled files
 
-This command ships two files. Resolve the plugin root before using them:
+This command ships everything it needs inside the plugin (`$CLAUDE_PLUGIN_ROOT`). You do **not** read
+the template or icons yourself — `build.mjs` does. You only produce the workflow data JSON.
 
-```bash
-echo "$CLAUDE_PLUGIN_ROOT"
-```
-
-- **`$CLAUDE_PLUGIN_ROOT/template.html`** — the fixed UI shell. You inject data into it; never rewrite it.
-- **`$CLAUDE_PLUGIN_ROOT/DESIGN.md`** — the full design rationale, data schema, content voice
-  guidelines, and n8n design-system mapping. **Read it first** and follow it exactly; this command is
-  the operational checklist.
+- **`build.mjs`** — Node builder. Injects your data + the bundled icons into the template, writes the
+  HTML, and opens it. Resolves `template.html` and `node-icons.json` relative to itself.
+- **`template.html`** — the fixed UI shell (don't touch it).
+- **`node-icons.json`** — ~100 real n8n node icons, bundled. No external repo needed.
+- **`DESIGN.md`** — the full design rationale, data schema, content voice guidelines, and n8n
+  design-system mapping. **Read it first** (`$CLAUDE_PLUGIN_ROOT/DESIGN.md`) and follow it exactly;
+  this command is the operational checklist.
 
 ## Requirements
 
-- The **n8n MCP server** must be connected in Claude Code (this command calls n8n MCP tools such as
-  `search_workflows`, `get_workflow_details`, `get_node_types`). If it isn't, stop and tell the user
-  to connect it.
-- Optional but recommended: a local clone of the **n8n repo** (commonly `~/Documents/n8n`) so the
-  command can read genuine node-icon SVGs for any node type. Without it, common nodes still use a
-  built-in icon set and anything else gets a clean generic glyph.
+- **Node.js ≥ 18** on PATH (runs the bundled `build.mjs`). Every n8n user has it.
+- The **n8n MCP server** connected in Claude Code (this command calls `search_workflows`,
+  `get_workflow_details`, `get_node_types`). If it isn't, stop and tell the user to connect it.
+- **No local n8n repo is needed** — icons ship with the plugin; everything dynamic comes from the MCP.
+
+Keep the run lean: lean on the MCP for all workflow/node data, and do the whole build in **one**
+`node build.mjs` call. Don't shell out to read icons, grep a repo, or write temp scripts.
 
 ---
 
@@ -66,19 +67,12 @@ Prefer the **deployed JSON** when available — it has canonical node names, typ
 Read the actual parameter **values** from the workflow (cron expression, API query/filters, table
 names, model id, recipient, etc.) so the explanations are specific to *this* workflow, not generic.
 
-## Step 3 — Get the real node icons
+## Step 3 — Icons (nothing to do)
 
-For each node type, resolve a real icon:
-
-- **If a local n8n repo is available**, read the node's `icon` field from its `*.node.ts`:
-  - `icon: 'file:x.svg'` → read that colocated SVG verbatim (full-colour brand icons, e.g. Reddit/Gmail).
-  - `icon: 'node:name'` → read
-    `packages/frontend/@n8n/design-system/src/components/N8nIcon/nodes/<name>.svg` (monochrome line
-    icons that use `currentColor`); resolve `iconColor` to a hex from `_tokens.scss` + `_primitives.scss`.
-  - Put the SVG markup in the node's `iconSvg` and the colour in `iconColor`.
-- **Otherwise** rely on the template's built-in `NODE_ICONS` map (covers scheduleTrigger, set, reddit,
-  httpRequest, merge, filter, dataTable, aggregate, gmail, chainLlm, lmChatAnthropic). Anything not
-  covered falls back to a generic glyph automatically — only inject `iconSvg` for types you can source.
+Icons are handled automatically by the bundled `node-icons.json` (~100 common node types), matched on
+each node's `type`. Anything not in the library falls back to a clean generic glyph. **Do not read the
+n8n repo and do not set `iconSvg`** — leave icons to the builder. (Only set `node.iconSvg` +
+`node.iconColor` if you deliberately want to override a single node's icon, which is rarely needed.)
 
 ## Step 4 — Classify nodes & build the graph
 
@@ -127,23 +121,28 @@ Voice: **Simple** = plain, for a capable non-expert — informative, never patro
 from Reddit", not "talks to Reddit"). **Technical** = precise n8n / engineering terms, parameter names,
 data shapes, gotchas. Also write `summary.{simple,technical}` and each `stage.summary.{simple,technical}`.
 
-## Step 8 — Assemble, inject, open
+## Step 8 — Assemble, build, open (one command)
 
-1. Build the `WF` object exactly per the DESIGN.md schema (`title`, `summary`, `stages`, `nodes`, `edges`).
-   Building it in a small script (e.g. Python) and serializing with a JSON encoder is the safest way to
-   handle escaping of the inline SVGs and any `$json` / `$()` expressions in the text.
-2. Read `$CLAUDE_PLUGIN_ROOT/template.html`.
-3. Replace `__WORKFLOW_DATA__` with the `WF` object as valid JSON, and `__WORKFLOW_TITLE__` with the
-   workflow title. Make no other edits to the template. (Guard: the serialized JSON must not contain
-   the literal `</script>`.)
-4. Write to `./explanations/<workflow-slug>.explain.html` in the user's current project (create
-   `explanations/` if needed).
-5. Run `open "<path>"` (macOS) / `xdg-open` (Linux) / `start` (Windows) and report the path.
+1. Assemble the `WF` object exactly per the DESIGN.md schema (`title`, `summary`, `stages`, `nodes`,
+   `edges`) — no `iconSvg` unless overriding.
+2. **Write it with the Write tool** to `./explanations/<workflow-slug>.wf.json` (plain JSON — the Write
+   tool handles all escaping; no Bash, no temp scripts).
+3. Run the bundled builder (the only shell command needed):
+   ```bash
+   node "$CLAUDE_PLUGIN_ROOT/build.mjs" ./explanations/<slug>.wf.json ./explanations/<slug>.explain.html --open
+   ```
+   `build.mjs` injects the data + bundled icons into the template (escaping so node text can never
+   break the page), writes the HTML, and opens it. Report the output path.
+
+If the page shows an error overlay instead of the canvas, it will state exactly what was malformed in
+the data — fix the `.wf.json` and re-run the one command.
 
 ## Quality bar
 
-- Valid JSON injection (no trailing commas; properly escaped strings/quotes/newlines).
-- Every node appears on the canvas, in exactly one stage, with full content + cfg.
-- Edges reference real node ids; AI sub-node edges marked `ai:true`.
+- The `.wf.json` is valid JSON (the Write tool guarantees this; don't hand-concatenate).
+- Every node appears on the canvas, in exactly one stage, with full `content` + `cfg`.
+- Edges reference real node ids; AI sub-node edges marked `ai:true` (the template also drops/​warns on
+  any stray bad reference rather than blanking).
 - Explanations are specific and accurate to the real parameters — cross-check a few against
   `get_node_types` and the workflow's actual values before finishing.
+- The whole run should be ~2 MCP reads + 1 Write + 1 `node` call. No repo reads, no temp scripts.

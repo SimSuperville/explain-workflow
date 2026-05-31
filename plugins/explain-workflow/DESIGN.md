@@ -9,8 +9,10 @@ the n8n editor**. This README captures every product + design decision and the c
 native build can be done without re-deriving anything.
 
 - `template.html` — the fixed, workflow-agnostic UI shell (canvas, stepper, panel, pan/zoom, fonts).
+- `node-icons.json` — ~100 real n8n node icons, bundled (no repo needed at runtime).
+- `build.mjs` — Node builder: injects the data + icons into the template, writes the HTML, opens it.
 - `commands/explain-workflow.md` — the command: how Claude resolves a workflow and produces the data.
-- `examples/daily-ai-brief.explain.html` — a signed-off reference sample of generated output.
+- `examples/what-shipped-yesterday.explain.html` — a reference sample of generated output.
 - Generated output is written to `./explanations/<slug>.explain.html` in the user's current project.
 
 ---
@@ -51,14 +53,28 @@ native build can be done without re-deriving anything.
 ## 2. Architecture
 
 The template **never changes per workflow**. Claude (or, natively, the editor) supplies only a JSON
-**data object**; the template renders it. Two placeholders are substituted:
+**data object**; the bundled `build.mjs` injects it (plus the icon library) and the template renders it.
+Three placeholders are substituted by the builder:
 
-- `__WORKFLOW_DATA__` → the `WF` JSON object (schema below).
+- `__WORKFLOW_DATA__` → the `WF` JSON object (schema below), inside `<script type="application/json"
+  id="wf-data">`.
+- `__NODE_ICONS__` → the bundled `node-icons.json` library, inside `<script type="application/json"
+  id="wf-icons">`.
 - `__WORKFLOW_TITLE__` → the workflow title (in the `<title>` tag).
 
+**Why JSON-in-script-tags, not `const WF = {…}`:** an inline JS object literal is fragile — a stray
+`</script>`, a U+2028/U+2029, or a backslash inside any node's text silently breaks the whole script
+and blanks the page. Embedding as `application/json` and `JSON.parse`-ing at runtime removes that
+entire failure class; the builder only has to escape `</` → `<\/` so the block can't close early.
+
+**Defensive boot.** `boot()` parses both blocks in `try/catch`, runs `validateAndRepair()` (drops +
+`console.warn`s any edge/stage ref to a missing node), renders **nodes before edges**, guards
+`edgePath()`/layout math against missing nodes & NaN, and on any failure shows a visible **error
+overlay** (message + stack) instead of a blank canvas. A blank screen should never happen silently.
+
 Everything interactive — canvas render, edges, pan/zoom, stepper, Simple/Technical toggle, hover
-highlight, theme toggle, panel resize — is vanilla JS inside the template. No build step, no network,
-no server.
+highlight, theme toggle, panel resize — is vanilla JS inside the template. No network, no server; the
+only build step is the one `node build.mjs` injection.
 
 Why the split: it keeps generation cheap and consistent, and makes the native n8n port a matter of
 feeding the same data shape from the workflow store into an in-app panel.
@@ -139,14 +155,15 @@ Sourced from the n8n repo (`packages/frontend/@n8n/design-system` + `editor-ui/.
 | Detail panel | bottom-docked, resizable; NDV-flavoured node header (icon + name + mono type) |
 | Icon sizing | 40px on canvas nodes, 30px on config nodes & panel header |
 
-**Icon sourcing** (the faithful part): n8n node icons live either as colocated brand SVGs
-(`packages/nodes-base/nodes/.../x.svg`, e.g. Reddit, Gmail; langchain under
-`packages/@n8n/nodes-langchain/nodes/.../x.svg`) referenced by `icon: 'file:x.svg'`, or as monochrome
-registry icons referenced by `icon: 'node:name'` in
-`packages/frontend/@n8n/design-system/src/components/N8nIcon/nodes/<name>.svg` (these use
-`currentColor`, tinted by the node's `iconColor`). `iconColor` names resolve to hex via `_tokens.scss`
-→ `_primitives.scss`. The template embeds the 11 common ones; the command injects others as `iconSvg`
-when a local n8n repo is available, else a generic glyph is used.
+**Icon sourcing** (bundled — no repo at runtime): `node-icons.json` ships ~100 real n8n node icons,
+keyed by node type. They were extracted **once** from the n8n repo: colocated brand SVGs
+(`packages/nodes-base/nodes/.../x.svg`, e.g. Reddit, Gmail) referenced by `icon: 'file:x.svg'`, and
+monochrome registry icons (`icon: 'node:name'` →
+`packages/frontend/@n8n/design-system/src/components/N8nIcon/nodes/<name>.svg`, which use
+`currentColor` tinted by the node's `iconColor`, resolved to hex via `_tokens.scss`). `iconFor(n)`
+resolves: `node.iconSvg` (rare manual override) → bundled `node-icons.json[type]` → small built-in
+fallback map → generic glyph. To refresh/extend the library, re-run the extractor against an n8n
+checkout and commit the updated JSON — the shipped plugin still needs no repo.
 
 ---
 
