@@ -1,0 +1,10 @@
+# OS / editor
+.DS_Store
+*.log
+
+# Generated output (the plugin writes here in users' projects, not in the repo)
+explanations/
+
+# Local env
+.env
+.env.local

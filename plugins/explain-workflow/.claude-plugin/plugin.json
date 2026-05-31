@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "explain-workflow",
+  "displayName": "Workflow Explainer for n8n",
+  "version": "1.0.0",
+  "description": "Generate a self-contained, interactive HTML explainer for any n8n workflow — a faithful canvas with real node icons and fonts, clickable nodes, Simple/Technical explanations, level-aware Key settings, and a stage-by-stage walkthrough.",
+  "author": {
+    "name": "Simeon Superville"
+  },
+  "homepage": "https://github.com/SimSuperville/explain-workflow",
+  "repository": "https://github.com/SimSuperville/explain-workflow",
+  "license": "MIT",
+  "keywords": ["n8n", "workflow", "documentation", "visualization", "explainer", "onboarding"]
+}
